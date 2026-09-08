@@ -1,16 +1,18 @@
 # GJ1237
 
-A beginner-friendly Streamlit stock-analysis prototype inspired by trading-terminal layouts.
+A beginner-friendly Streamlit paper-trading terminal inspired by broker workstation layouts.
 
 ## Features
 
-- NSE watchlist
+- NSE watchlist with compact terminal layout
 - Yahoo Finance market data
 - Candlestick chart
 - SMA 20 / SMA 50
 - RSI
 - Basic trend classification
 - Prototype trade score
+- Local paper order ticket with order history
+- Portfolio and margin summary panels
 - Recent OHLCV table
 
 ## Run online
@@ -28,7 +30,7 @@ No local Python installation is required if you use GitHub's browser editor/Code
 
 This is a prototype for software development and visualization. It is not investment advice.
 
-The current trade score is deliberately simple and should be replaced with your actual backend logic.
+The order ticket is local paper trading only. The current trade score is deliberately simple and should be replaced with your actual backend logic.
 
 ## Project structure
 
