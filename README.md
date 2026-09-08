@@ -1,4 +1,4 @@
-# Stock Market GUI
+# GJ1237
 
 A beginner-friendly Streamlit stock-analysis prototype inspired by trading-terminal layouts.
 
