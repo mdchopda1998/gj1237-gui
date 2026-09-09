@@ -43,6 +43,18 @@ def filter_zones(zone_df: pd.DataFrame, min_base_count: int = 1,
     return zones
 
 
+def filter_trade_log(trade_log: pd.DataFrame, filtered_zone_dates) -> pd.DataFrame:
+    """
+    Narrows an already-computed trade_log down to just the rows whose zone
+    creation date (the trade_log's index) is in filtered_zone_dates - i.e.
+    the same subset filter_zones() just picked for the chart. Pure pandas
+    row selection, no analysis re-run.
+    """
+    if trade_log is None or trade_log.empty:
+        return pd.DataFrame()
+    return trade_log[trade_log.index.isin(filtered_zone_dates)]
+
+
 def build_zone_figure(zone_df: pd.DataFrame, ticker: str, timeframe_label: str,
                        filtered_zones: pd.DataFrame = None) -> go.Figure:
     """

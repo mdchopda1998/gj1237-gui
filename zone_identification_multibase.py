@@ -23,7 +23,7 @@ the cleaner long-term fix is for run_risk_management_simulation() to carry
 those columns through itself.
 """
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 import numpy as np
@@ -103,6 +103,26 @@ class StrategyResults:
     nifty_data_sources: dict = field(default_factory=dict)  # nifty OHLC sources
     metrics: dict = field(default_factory=dict)
     error: Optional[str] = None          # set if the real backend raised
+    analysis_timestamp: Optional[str] = None  # when this StrategyResults was computed
+
+
+def recompute_metrics_for_subset(trade_log: pd.DataFrame) -> dict:
+    """
+    Re-runs your real evaluate_strategy_metrics/calculate_composite_score
+    on an already-filtered SLICE of an existing trade_log. This is NOT
+    re-analysis - no zone detection, no backtest, no data fetch - just the
+    same pure-pandas aggregation your functions already do, over fewer
+    rows. Used to show "metrics for the currently filtered zones" without
+    re-running "Run Analysis". Returns {} for an empty/None input.
+    """
+    if trade_log is None or trade_log.empty:
+        return {}
+    try:
+        metrics = be.evaluate_strategy_metrics(trade_log.copy())
+        metrics["Composite Score"] = be.calculate_composite_score(metrics)
+        return metrics
+    except Exception as e:
+        return {"_error": f"{type(e).__name__}: {e}"}
 
 
 def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
@@ -117,6 +137,7 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
     figures; see charting.py for that.
     """
     ratio = ratio or default_ratio()
+    ts_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     ticker_dfs, ticker_sources = _load_ticker_across_timeframes(ticker, start_date, end_date, data_dir)
     nifty_zones, nifty_sources = _build_nifty_zone_dfs(start_date, end_date, data_dir, ratio)
@@ -134,6 +155,7 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
             ticker=ticker, zones={}, trade_log=pd.DataFrame(),
             data_sources=ticker_sources, nifty_data_sources=nifty_sources,
             error=f"Backend raised {type(e).__name__}: {e}",
+            analysis_timestamp=ts_now,
         )
 
     zones = out.get("zones") or {}
@@ -142,6 +164,7 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
             ticker=ticker, zones={}, trade_log=pd.DataFrame(),
             data_sources=ticker_sources, nifty_data_sources=nifty_sources,
             error=f"No zones were identified for {ticker} with the current ratio settings.",
+            analysis_timestamp=ts_now,
         )
 
     trade_score = out.get("anal", {}).get("ts")
@@ -175,5 +198,5 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
     return StrategyResults(
         ticker=ticker, zones=zones, trade_log=trade_log, trade_score=trade_score,
         data_sources=ticker_sources, nifty_data_sources=nifty_sources,
-        metrics=metrics,
+        metrics=metrics, analysis_timestamp=ts_now,
     )

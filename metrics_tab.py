@@ -19,32 +19,40 @@ def render(config: dict, results):
         return
 
     st.subheader(f"{config['ticker']} - Zones & Price Action")
-    st.caption(
-        "These filters only change what's plotted - they don't re-run zone "
-        "detection, the backtest, or scoring. Metrics/Trade Log tabs always "
-        "reflect the full, unfiltered analysis."
-    )
+    if results.analysis_timestamp:
+        st.caption(f"Analysis last computed: {results.analysis_timestamp} (zone detection, backtest, scoring)")
 
-    # Filters applied across all three timeframe tabs
-    f1, f2 = st.columns([2, 2])
-    with f1:
-        min_base_count = st.slider("Min Base Count", 1, 10, 1, key="min_base_count")
-    with f2:
-        zone_types = st.multiselect(
-            "Zone Type", ["Demand", "Supply"], default=["Demand", "Supply"], key="zone_types"
+    # --- Chart Filters: clearly separated from the analysis above ---------
+    with st.container(border=True):
+        st.markdown("##### 🔍 Chart Filters — instant, does *not* re-run analysis")
+        st.caption(
+            "These only change which zones are drawn below. Zone detection, the "
+            "backtest, and scoring stay exactly as they were at the timestamp "
+            "above until you click **Run Analysis** again in the sidebar. "
+            "The Metrics tab has a matching toggle to see numbers for just "
+            "this filtered subset."
         )
 
-    # Extra filters that only apply where trade_score (df_ts) data exists -
-    # your real backend only scores the daily timeframe.
-    has_trade_score = results.trade_score is not None and not results.trade_score.empty
-    min_strength, fresh_only = None, False
-    if has_trade_score:
-        with st.expander("Daily-only filters (from trade scoring: Strength, Freshness)", expanded=False):
-            use_strength = st.checkbox("Filter by minimum Strength", value=False, key="use_strength")
-            if use_strength:
-                max_strength = int(results.trade_score["Strength"].max())
-                min_strength = st.slider("Min Strength", 0, max(max_strength, 1), 0, key="min_strength")
-            fresh_only = st.checkbox("Fresh zones only", value=False, key="fresh_only")
+        f1, f2 = st.columns([2, 2])
+        with f1:
+            st.slider("Min Base Count", 1, 10, 1, key="min_base_count")
+        with f2:
+            st.multiselect("Zone Type", ["Demand", "Supply"], default=["Demand", "Supply"], key="zone_types")
+
+        has_trade_score = results.trade_score is not None and not results.trade_score.empty
+        if has_trade_score:
+            with st.expander("Daily-only filters (from trade scoring: Strength, Freshness)", expanded=False):
+                st.checkbox("Filter by minimum Strength", value=False, key="use_strength")
+                if st.session_state.get("use_strength"):
+                    max_strength = int(results.trade_score["Strength"].max())
+                    st.slider("Min Strength", 0, max(max_strength, 1), 0, key="min_strength")
+                st.checkbox("Fresh zones only", value=False, key="fresh_only")
+    # --- end Chart Filters --------------------------------------------------
+
+    min_base_count = st.session_state.get("min_base_count", 1)
+    zone_types = tuple(st.session_state.get("zone_types", ["Demand", "Supply"]))
+    min_strength = st.session_state.get("min_strength") if st.session_state.get("use_strength") else None
+    fresh_only = st.session_state.get("fresh_only", False)
 
     tf_tabs = st.tabs(list(TF_LABELS.values()))
     for (tf_key, tf_label), tf_tab in zip(TF_LABELS.items(), tf_tabs):
@@ -61,7 +69,7 @@ def render(config: dict, results):
             score_df = results.trade_score if tf_key == "1d" else None
 
             filtered = filter_zones(
-                zone_df, min_base_count=min_base_count, zone_types=tuple(zone_types),
+                zone_df, min_base_count=min_base_count, zone_types=zone_types,
                 trade_score=score_df, min_strength=apply_strength, fresh_only=apply_fresh,
             )
             fig = build_zone_figure(zone_df, config["ticker"], tf_label, filtered_zones=filtered)

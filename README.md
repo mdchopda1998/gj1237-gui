@@ -55,11 +55,22 @@ by Base Count / Demand-Supply / Strength / Freshness, and
 whatever subset you pass it. The Charts tab calls both at render time, so
 adjusting a filter slider (min Base Count, min Strength, Fresh-only,
 Zone Type) only re-runs cheap plotting code - it never re-triggers zone
-detection, the backtest, or scoring. Metrics and Trade Log tabs are
-intentionally unaffected by chart filters - they always reflect the full,
-unfiltered analysis, since backtest performance shouldn't silently change
-based on what you're currently looking at on the chart.
+detection, the backtest, or scoring. Metrics and Trade Log tabs are **not** affected by chart filters by
+default - they show the full backtest. The Metrics tab has an explicit
+**"Compute metrics for currently filtered zones only"** checkbox that
+mirrors whatever's set on the Charts tab (same Base Count / Zone Type /
+Strength / Freshness) and re-slices + re-aggregates the existing
+`trade_log` - still no re-analysis, since `evaluate_strategy_metrics` is
+pure pandas aggregation over however many rows you hand it.
 
+### Making the split visible in the UI
+
+The Charts tab's filter controls sit inside a bordered container labeled
+**"🔍 Chart Filters — instant, does *not* re-run analysis"**, with a
+caption pointing at the analysis timestamp shown just above it. That
+timestamp (`results.analysis_timestamp`, set once per "Run Analysis"
+click) is also shown on the Metrics tab, so it's visible at a glance that
+moving a filter slider doesn't change when the underlying analysis ran.
 ### Two things worth knowing about your real code, found while integrating
 
 1. **`run_strategy_for_ticker` ignores the `ticker` argument for ratio
