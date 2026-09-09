@@ -27,14 +27,38 @@ data_loading.py                 CSV-first / live yfinance / synthetic-fallback O
         |
 ratio_config.py                  your real ratio defaults + presets
         |
-zone_identification_multibase.py  ADAPTER: orchestrates the above, calls...
-        |
-smc_backend.py                    ...your real identity_zones_with_multibase,
+zone_identification_multibase.py  ANALYSIS adapter: zone detection, backtest, scoring
+        |                          (cached - only reruns on "Run Analysis")
+smc_backend.py                    your real identity_zones_with_multibase,
                                     run_strategy_for_ticker, evaluate_strategy_metrics,
                                     calculate_composite_score
         |
+charting.py                       PLOTTING only - filters + draws figures
+        |                          (cheap - reruns on every filter widget change,
+        |                           does NOT touch cached analysis)
 ui/tabs/*.py                     render zones / metrics / trade log
 ```
+
+### Analysis vs. plotting are now separate
+
+`zone_identification_multibase.py` (cached via `@st.cache_data` in
+`data_access.py`) only produces data: `zones` (per timeframe, with `Base
+Count`, `Is Demand`, `Proximal`/`Distal`/`Target`), `trade_score` (your
+`df_ts` / `out['anal']['ts']` - `Strength`, `Freshness`, `BOS`, `OB`,
+`Sweep`, HTF-support flags; **daily timeframe only**, since that's the
+only one your `calculate_trade_score` scores), and `trade_log` (`df_rm`).
+It builds no figures.
+
+`charting.py` is pure plotting: `filter_zones()` narrows a zone dataframe
+by Base Count / Demand-Supply / Strength / Freshness, and
+`build_zone_figure()` draws the candlestick + shaded rectangles for
+whatever subset you pass it. The Charts tab calls both at render time, so
+adjusting a filter slider (min Base Count, min Strength, Fresh-only,
+Zone Type) only re-runs cheap plotting code - it never re-triggers zone
+detection, the backtest, or scoring. Metrics and Trade Log tabs are
+intentionally unaffected by chart filters - they always reflect the full,
+unfiltered analysis, since backtest performance shouldn't silently change
+based on what you're currently looking at on the chart.
 
 ### Two things worth knowing about your real code, found while integrating
 
@@ -114,10 +138,11 @@ state.py                             session_state key helpers
 data_loading.py                      CSV-first, yfinance-fallback OHLC loading (cached)
 ratio_config.py                      your real ratio defaults + presets + GEN.NS resolution
 data_access.py                       cached wrapper around the adapter
-zone_identification_multibase.py     ADAPTER: data prep, Nifty benchmark, bridge fix, error handling
+zone_identification_multibase.py     ANALYSIS adapter: data prep, Nifty benchmark, bridge fix, error handling (no plotting)
 smc_backend.py                       your real backend logic (library-only extract)
+charting.py                          PLOTTING only: filter_zones() + build_zone_figure(), no analysis
 ui/sidebar.py                        sidebar inputs incl. ratio controls -> config dict
-ui/tabs/charts_tab.py                Plotly chart rendering, per-timeframe sub-tabs (1D/1W/1M)
+ui/tabs/charts_tab.py                filter widgets + per-timeframe charts (calls charting.py at render time)
 ui/tabs/metrics_tab.py                KPI cards from evaluate_strategy_metrics + composite score
 ui/tabs/trade_log_tab.py              filterable trade-by-trade dataframe
 ```

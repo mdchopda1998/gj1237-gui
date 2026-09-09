@@ -1,11 +1,14 @@
 """
 Adapter between the Streamlit UI and your REAL backend (smc_backend.py).
 
-This is now real integration, not a placeholder - zone detection,
-backtesting, and metrics all run your actual functions. What THIS file
-does is exactly the "orchestration" work your Colab driver script used to
-do by hand: load OHLC (CSV-first/live-fallback), build the Nifty benchmark
-zones, then call your real run_strategy_for_ticker().
+This is the ANALYSIS half only - zone detection, backtesting, scoring.
+It does NOT build any figures. Plotting is deliberately split out into
+charting.py, which is called from ui/tabs/charts_tab.py at render time
+(cheap, reruns on every filter-widget interaction) rather than baked in
+here (expensive, cached via data_access.py, only reruns when you click
+"Run Analysis"). That split is what lets you re-filter which zones are
+drawn (by Base Count, Strength, Demand/Supply, etc.) without re-running
+zone detection/backtesting/scoring.
 
 One bridging fix applied HERE (not inside smc_backend.py - see the comment
 at BRIDGE FIX below): your real run_risk_management_simulation() drops the
@@ -25,7 +28,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 
 import smc_backend as be
 from data_loading import load_multi_interval
@@ -74,36 +76,6 @@ def _load_ticker_across_timeframes(ticker: str, start_date, end_date, data_dir: 
     return dfs, sources
 
 
-def _build_price_figure(zone_df: pd.DataFrame, ticker: str, timeframe_label: str) -> go.Figure:
-    """
-    Our own lightweight chart (not your plot_stock_zones/plot_stock_zones_monthly -
-    those call fig.show() internally rather than returning fig, so they
-    can't be used directly in Streamlit). Reads the REAL column names your
-    identity_zones_with_multibase produces: Zone_Created, 'Is Demand',
-    Proximal, Distal, Target.
-    """
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=zone_df.index, open=zone_df["Open"], high=zone_df["High"],
-        low=zone_df["Low"], close=zone_df["Close"], name=ticker,
-    ))
-    if "Zone_Created" in zone_df.columns:
-        zones = zone_df[zone_df["Zone_Created"] == True]  # noqa: E712
-        for zdate, zone in zones.iterrows():
-            is_demand = bool(zone["Is Demand"])
-            color = "rgba(0,180,0,0.15)" if is_demand else "rgba(200,0,0,0.15)"
-            fig.add_shape(
-                type="rect", x0=zdate, x1=zone_df.index[-1],
-                y0=zone["Distal"], y1=zone["Proximal"],
-                fillcolor=color, line=dict(width=0), layer="below",
-            )
-    fig.update_layout(
-        title=f"{ticker} - {timeframe_label} zones",
-        xaxis_rangeslider_visible=False, height=520,
-    )
-    return fig
-
-
 def _build_nifty_zone_dfs(start_date, end_date, data_dir: str, ratio: dict):
     """
     Mirrors your driver script's:
@@ -124,9 +96,9 @@ def _build_nifty_zone_dfs(start_date, end_date, data_dir: str, ratio: dict):
 @dataclass
 class StrategyResults:
     ticker: str
-    zones: dict                          # {'1d': df, '1wk': df, '1mo': df} - real columns
-    figures: dict                        # {'1d': go.Figure, ...}
+    zones: dict                          # {'1d': df, '1wk': df, '1mo': df} - real columns, for plotting
     trade_log: pd.DataFrame              # df_rm, bridged with Outcome/Date Created
+    trade_score: pd.DataFrame = field(default_factory=pd.DataFrame)  # df_ts (1d only) - Strength/Freshness/BOS/OB/...
     data_sources: dict = field(default_factory=dict)       # ticker OHLC sources
     nifty_data_sources: dict = field(default_factory=dict)  # nifty OHLC sources
     metrics: dict = field(default_factory=dict)
@@ -141,9 +113,8 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
     for both `ticker` and the Nifty benchmark, then calls your actual
     smc_backend.run_strategy_for_ticker(). Any exception from your backend
     is caught and returned via StrategyResults.error rather than crashing
-    the app, since this is the first end-to-end run of code with many
-    moving parts (BOS/order-block/volume/choppiness detectors etc.) against
-    whatever data the sidebar happens to produce.
+    the app. Returns raw zone/trade-score/trade-log data only - no
+    figures; see charting.py for that.
     """
     ratio = ratio or default_ratio()
 
@@ -160,7 +131,7 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
         )
     except Exception as e:
         return StrategyResults(
-            ticker=ticker, zones={}, figures={}, trade_log=pd.DataFrame(),
+            ticker=ticker, zones={}, trade_log=pd.DataFrame(),
             data_sources=ticker_sources, nifty_data_sources=nifty_sources,
             error=f"Backend raised {type(e).__name__}: {e}",
         )
@@ -168,15 +139,14 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
     zones = out.get("zones") or {}
     if not zones or zones.get("1d") is None:
         return StrategyResults(
-            ticker=ticker, zones={}, figures={}, trade_log=pd.DataFrame(),
+            ticker=ticker, zones={}, trade_log=pd.DataFrame(),
             data_sources=ticker_sources, nifty_data_sources=nifty_sources,
             error=f"No zones were identified for {ticker} with the current ratio settings.",
         )
 
-    figures = {
-        tf: _build_price_figure(zones[tf], ticker, label)
-        for tf, label in TIMEFRAMES.items() if zones.get(tf) is not None
-    }
+    trade_score = out.get("anal", {}).get("ts")
+    if trade_score is None:
+        trade_score = pd.DataFrame()
 
     df_bt = out.get("anal", {}).get("bt")
     df_rm = out.get("anal", {}).get("rm")
@@ -203,7 +173,7 @@ def run_strategy_for_ticker(ticker: str, start_date: date, end_date: date,
             trade_log.attrs["metrics_error"] = f"{type(e).__name__}: {e}"
 
     return StrategyResults(
-        ticker=ticker, zones=zones, figures=figures, trade_log=trade_log,
+        ticker=ticker, zones=zones, trade_log=trade_log, trade_score=trade_score,
         data_sources=ticker_sources, nifty_data_sources=nifty_sources,
         metrics=metrics,
     )
