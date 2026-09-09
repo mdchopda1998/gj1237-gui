@@ -1,79 +1,30 @@
-import streamlit as st
-from datetime import date, timedelta
 
+import streamlit as st
+from datetime import date,timedelta
 from ratio_config import default_ratio, resolve_gen_ratio, DAILY_PRESETS
 
-
-def _render_ratio_controls(ratio: dict) -> dict:
-    st.sidebar.subheader("Zone Detection Ratios")
-    st.sidebar.caption(
-        "Your real backend currently only reads ratio['GEN.NS'][interval] "
-        "regardless of ticker - these controls edit that shared config."
-    )
-
-    preset_name = st.sidebar.selectbox(
-        "Daily (1d) preset", options=["Custom"] + list(DAILY_PRESETS.keys()), index=1
-    )
-    if preset_name != "Custom":
-        ratio["GEN.NS"]["1d"] = {k: dict(v) for k, v in DAILY_PRESETS[preset_name].items()}
-
-    with st.sidebar.expander("Advanced: edit TR/ATR & Body/TR thresholds", expanded=False):
-        for tf, tf_label in [("1d", "Daily"), ("1wk", "Weekly"), ("1mo", "Monthly")]:
-            st.markdown(f"**{tf_label}**")
-            tf_ratio = resolve_gen_ratio(tf, ratio)
-            cols = st.columns(3)
-            for col, candle_type in zip(cols, ["Exciting", "Base", "Explosive"]):
-                with col:
-                    st.caption(candle_type)
-                    tr_atr = st.slider(
-                        f"TR/ATR ({candle_type[:3]}, {tf})", 0.1, 2.0,
-                        float(tf_ratio[candle_type]["TR_ATR"]), 0.1,
-                        key=f"tr_atr_{tf}_{candle_type}",
-                    )
-                    bs_tr = st.slider(
-                        f"Body/TR ({candle_type[:3]}, {tf})", 0.1, 1.0,
-                        float(tf_ratio[candle_type]["BS_TR"]), 0.05,
-                        key=f"bs_tr_{tf}_{candle_type}",
-                    )
-                    ratio["GEN.NS"].setdefault(tf, {})[candle_type] = {"TR_ATR": tr_atr, "BS_TR": bs_tr}
-    return ratio
-
-
-def render_sidebar() -> dict:
-    st.sidebar.header("Configuration")
-
-    ticker = st.sidebar.text_input("Ticker", value="SAIL.NS")
-
-    date_range = st.sidebar.date_input(
-        "Date Range",
-        value=(date.today() - timedelta(days=365 * 3), date.today()),
-    )
-    start_date, end_date = (date_range if len(date_range) == 2 else (None, None))
-
-    risk_pct = st.sidebar.slider(
-        "Risk per Trade (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1
-    ) / 100.0
-
-    initial_capital = st.sidebar.number_input(
-        "Initial Capital (₹)", min_value=10_000, value=500_000, step=10_000
-    )
-
-    with st.sidebar.expander("Data source", expanded=False):
-        data_dir = st.text_input(
-            "Local CSV folder", value="data",
-            help="Checked first, per ticker/interval (e.g. data/SAIL_NS_1d.csv). "
-                 "Falls back to a live yfinance fetch if a file isn't found there "
-                 "(also used to fetch the ^NSEI Nifty benchmark).",
-        )
-
-    ratio = _render_ratio_controls(default_ratio())
-
-    return {
-        "ticker": ticker.strip().upper() if ticker else "",
-        "start_date": start_date,
-        "end_date": end_date,
-        "risk_pct": risk_pct,
-        "initial_capital": initial_capital,
-        "data_dir": data_dir,
-        "ratio": ratio,
-    }
+def render_sidebar():
+    st.sidebar.header("⚙ Analysis Controls")
+    ticker=st.sidebar.text_input("Ticker",value=st.session_state.get("ticker","SAIL.NS")).strip().upper()
+    dr=st.sidebar.date_input("Backtest range",(date.today()-timedelta(days=365*3),date.today()))
+    start_date,end_date=(dr if len(dr)==2 else (None,None))
+    risk_pct=st.sidebar.slider("Risk per trade (%)",0.1,5.0,1.0,0.1)/100
+    capital=st.sidebar.number_input("Initial capital (₹)",10000,100000000,500000,10000)
+    with st.sidebar.expander("Data source"):
+        data_dir=st.text_input("Local CSV folder","data")
+    with st.sidebar.expander("Zone Detection Ratios"):
+        ratio=default_ratio()
+        preset=st.selectbox("Daily preset",["Custom"]+list(DAILY_PRESETS),index=1)
+        if preset!="Custom": ratio["GEN.NS"]["1d"]={k:dict(v) for k,v in DAILY_PRESETS[preset].items()}
+        for tf,label in [("1d","Daily"),("1wk","Weekly"),("1mo","Monthly")]:
+            with st.expander(label):
+                rr=resolve_gen_ratio(tf,ratio)
+                for typ in ["Exciting","Base","Explosive"]:
+                    c1,c2=st.columns(2)
+                    with c1:
+                        a=st.number_input(f"{typ} TR/ATR",.1,2.,float(rr[typ]["TR_ATR"]),.1,key=f"ratio_{tf}_{typ}_a")
+                    with c2:
+                        b=st.number_input(f"{typ} Body/TR",.1,1.,float(rr[typ]["BS_TR"]),.05,key=f"ratio_{tf}_{typ}_b")
+                    ratio["GEN.NS"][tf][typ]={"TR_ATR":a,"BS_TR":b}
+    return dict(ticker=ticker,start_date=start_date,end_date=end_date,risk_pct=risk_pct,
+                initial_capital=capital,data_dir=data_dir,ratio=ratio)

@@ -1,38 +1,22 @@
+
 import streamlit as st
-
-
-def _safe_options(series):
-    """Sorted unique values as strings, NaN mapped to 'Unknown' - avoids
-    TypeError: '<' not supported between float (NaN) and str when a
-    column has mixed real values and NaN (seen in real Zone_Type data)."""
-    filled = series.fillna("Unknown").astype(str)
-    return sorted(filled.unique()), filled
-
-
-def render(config: dict, results):
-    if results is None:
-        st.info("Run an analysis to see trade-by-trade logs.")
-        return
-    if getattr(results, "error", None):
-        st.info("No trade log to show - see the error above.")
-        return
-
-    st.subheader("Trade Log")
-
-    trade_log = results.trade_log
-    if trade_log is None or trade_log.empty:
-        st.warning("No trades were taken for the selected parameters.")
-        return
-
-    outcome_options, outcome_filled = _safe_options(trade_log["Outcome"])
-    zone_options, zone_filled = _safe_options(trade_log["Zone_Type"])
-
-    outcome_filter = st.multiselect("Outcome", options=outcome_options, default=outcome_options)
-    zone_filter = st.multiselect("Zone type", options=zone_options, default=zone_options)
-
-    filtered = trade_log[
-        outcome_filled.isin(outcome_filter) & zone_filled.isin(zone_filter)
-    ]
-
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
-    st.caption(f"{len(filtered)} of {len(trade_log)} trades shown.")
+import pandas as pd
+def render(config,results):
+    if results is None: st.info("Run Analysis first."); return
+    if getattr(results,"error",None): return
+    df=results.trade_log
+    st.subheader("📒 Trade Log")
+    if df is None or df.empty: st.warning("No resolved trades for this analysis."); return
+    a,b,c=st.columns(3)
+    outcomes=sorted(df["Outcome"].fillna("Unknown").astype(str).unique()) if "Outcome" in df else []
+    zones=sorted(df["Zone_Type"].fillna("Unknown").astype(str).unique()) if "Zone_Type" in df else []
+    with a: of=st.multiselect("Outcome",outcomes,outcomes)
+    with b: zf=st.multiselect("Zone type",zones,zones)
+    with c: minr=st.number_input("Minimum R-multiple",-20.0,20.0,-20.0,.25)
+    x=df.copy()
+    if "Outcome" in x: x=x[x["Outcome"].fillna("Unknown").astype(str).isin(of)]
+    if "Zone_Type" in x: x=x[x["Zone_Type"].fillna("Unknown").astype(str).isin(zf)]
+    if "R-Multiple" in x: x=x[x["R-Multiple"].fillna(-999)>=minr]
+    st.caption(f"{len(x)} of {len(df)} trades shown")
+    st.dataframe(x,use_container_width=True)
+    st.download_button("⬇ Download CSV",x.to_csv(index=True),"smc_trade_log.csv","text/csv")

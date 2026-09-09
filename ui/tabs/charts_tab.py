@@ -1,90 +1,51 @@
+
 import streamlit as st
+from charting import filter_zones,build_zone_figure
 
-from charting import filter_zones, build_zone_figure
-
-TF_LABELS = {"1d": "Daily", "1wk": "Weekly", "1mo": "Monthly"}
-SOURCE_NOTES = {
-    "csv": "local saved CSV",
-    "live": "live yfinance fetch",
-    "synthetic": "synthetic placeholder - no CSV found and live fetch failed",
-}
-
-
-def render(config: dict, results):
+def render(config,results):
     if results is None:
-        st.info("Set your parameters and click **Run Analysis** to see charts.")
+        st.info("Run Analysis from the sidebar.")
         return
-    if getattr(results, "error", None) or not results.zones:
-        st.info("No charts to show - see the error above, or try different settings.")
-        return
-
-    st.subheader(f"{config['ticker']} - Zones & Price Action")
-    if results.analysis_timestamp:
-        st.caption(f"Analysis last computed: {results.analysis_timestamp} (zone detection, backtest, scoring)")
-
-    # --- Chart Filters: clearly separated from the analysis above ---------
-    st.markdown("---")
-    try:
-        filter_box = st.container(border=True)
-    except TypeError:
-        # Older Streamlit (<1.28) doesn't support container(border=...)
-        filter_box = st.container()
-    with filter_box:
-        st.markdown("##### 🔍 Chart Filters — instant, does *not* re-run analysis")
-        st.caption(
-            "These only change which zones are drawn below. Zone detection, the "
-            "backtest, and scoring stay exactly as they were at the timestamp "
-            "above until you click **Run Analysis** again in the sidebar. "
-            "The Metrics tab has a matching toggle to see numbers for just "
-            "this filtered subset."
-        )
-
-        f1, f2 = st.columns([2, 2])
-        with f1:
-            st.slider("Min Base Count", 1, 10, 1, key="min_base_count")
-        with f2:
-            st.multiselect("Zone Type", ["Demand", "Supply"], default=["Demand", "Supply"], key="zone_types")
-
-        has_trade_score = results.trade_score is not None and not results.trade_score.empty
-        if has_trade_score:
-            with st.expander("Daily-only filters (from trade scoring: Strength, Freshness)", expanded=False):
-                st.checkbox("Filter by minimum Strength", value=False, key="use_strength")
-                if st.session_state.get("use_strength"):
-                    max_strength = int(results.trade_score["Strength"].max())
-                    st.slider("Min Strength", 0, max(max_strength, 1), 0, key="min_strength")
-                st.checkbox("Fresh zones only", value=False, key="fresh_only")
-    # --- end Chart Filters --------------------------------------------------
-
-    min_base_count = st.session_state.get("min_base_count", 1)
-    zone_types = tuple(st.session_state.get("zone_types", ["Demand", "Supply"]))
-    min_strength = st.session_state.get("min_strength") if st.session_state.get("use_strength") else None
-    fresh_only = st.session_state.get("fresh_only", False)
-
-    tf_tabs = st.tabs(list(TF_LABELS.values()))
-    for (tf_key, tf_label), tf_tab in zip(TF_LABELS.items(), tf_tabs):
-        with tf_tab:
-            zone_df = results.zones.get(tf_key)
-            if zone_df is None or zone_df.empty:
-                st.info(f"No {tf_label.lower()} data available.")
-                continue
-
-            # Strength/Freshness only apply to the daily tab, since that's
-            # the only timeframe your backend actually scores.
-            apply_strength = min_strength if tf_key == "1d" else None
-            apply_fresh = fresh_only if tf_key == "1d" else False
-            score_df = results.trade_score if tf_key == "1d" else None
-
-            filtered = filter_zones(
-                zone_df, min_base_count=min_base_count, zone_types=zone_types,
-                trade_score=score_df, min_strength=apply_strength, fresh_only=apply_fresh,
-            )
-            fig = build_zone_figure(zone_df, config["ticker"], tf_label, filtered_zones=filtered)
-            st.plotly_chart(fig, use_container_width=True)
-
-            total_zones = int(zone_df["Zone_Created"].sum()) if "Zone_Created" in zone_df.columns else 0
-            source = results.data_sources.get(tf_key, "unknown")
-            source_note = SOURCE_NOTES.get(source, source)
-            st.caption(
-                f"{len(filtered)} of {total_zones} zone(s) shown after filters "
-                f"\u00b7 data source: {source_note}"
-            )
+    if getattr(results,"error",None):
+        st.error(results.error); return
+    st.subheader("📈 Price Action & SMC Map")
+    st.caption("All controls below are frontend-only: changing them does not rerun your backend.")
+    f=st.container(border=True)
+    with f:
+        st.markdown("### 🔎 Chart Filters")
+        c1,c2,c3,c4=st.columns(4)
+        with c1: min_base=st.slider("Minimum base candles",1,10,1)
+        with c2: types=st.multiselect("Zone type",["Demand","Supply"],["Demand","Supply"])
+        with c3: continuous=st.selectbox("Zone structure",["All","Reversal","Continuous"])
+        with c4: bars=st.select_slider("Visible bars",[60,120,250,500,1000],value=250)
+        s1,s2,s3,s4=st.columns(4)
+        with s1: min_score=st.slider("Minimum trade score",0.0,10.0,0.0,.5)
+        with s2: use_strength=st.checkbox("Use minimum strength",False)
+        with s3: min_strength=st.number_input("Min strength",0,20,0,1,disabled=not use_strength)
+        with s4: fresh=st.checkbox("Fresh zones only",False)
+        st.markdown("**Overlays**")
+        o1,o2,o3,o4,o5,o6,o7=st.columns(7)
+        sma=o1.checkbox("SMA",True); vol=o2.checkbox("Volume",False); sw=o3.checkbox("Swings",False)
+        bos=o4.checkbox("BOS",False); sweep=o5.checkbox("Sweeps",False); ob=o6.checkbox("OB",False); htf=o7.checkbox("HTF",False)
+    zone_struct=None if continuous=="All" else continuous=="Continuous"
+    tabs=st.tabs(["Daily","Weekly","Monthly"])
+    for (tf,tab) in zip(["1d","1wk","1mo"],tabs):
+        with tab:
+            df=results.zones.get(tf)
+            if df is None or df.empty:
+                st.info("No data available."); continue
+            score=results.trade_score if tf=="1d" else None
+            filtered=filter_zones(df,min_base,tuple(types),score,
+                                  min_strength if tf=="1d" and use_strength else None,
+                                  fresh if tf=="1d" else False,
+                                  min_score if tf=="1d" and min_score>0 else None,
+                                  zone_struct)
+            htf_df=results.zones.get("1wk") if tf=="1d" else results.zones.get("1mo") if tf=="1wk" else None
+            fig=build_zone_figure(df,config["ticker"],{"1d":"Daily","1wk":"Weekly","1mo":"Monthly"}[tf],
+                                  filtered,sma,vol,sw,bos,sweep,ob,htf,htf_df,bars)
+            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":True,"displaylogo":False})
+            total=int(df["Zone_Created"].sum()) if "Zone_Created" in df else 0
+            st.caption(f"Showing {len(filtered)} of {total} detected zones · {len(df)} candles loaded")
+            if tf=="1d" and not filtered.empty:
+                cols=[c for c in ["Proximal","Distal","Target","Base Count","Is Demand","Is Continuous"] if c in filtered]
+                st.dataframe(filtered[cols].sort_index(ascending=False),use_container_width=True,hide_index=False)
