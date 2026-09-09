@@ -28,6 +28,9 @@ def render(config: dict, results):
     filtered = trade_log[
         trade_log["Outcome"].isin(outcome_filter) & trade_log["Zone_Type"].isin(zone_filter)
     ]
+    if not filtered.empty:
 
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
-    st.caption(f"{len(filtered)} of {len(trade_log)} trades shown.")
+        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        st.caption(f"{len(filtered)} of {len(trade_log)} trades shown.")
+    else:
+        st.info('No zones detected.')
