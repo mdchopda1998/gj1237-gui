@@ -1,33 +1,63 @@
+"""
+SMC Scanner & Backtester - Streamlit entry point.
+
+Run with:
+    streamlit run app.py
+"""
 import streamlit as st
 
+from data_access import get_strategy_results
+from ui.sidebar import render_sidebar
+from ui.tabs import charts_tab, metrics_tab, trade_log_tab
 
-def render(config: dict, results):
-    if results is None:
-        st.info("Run an analysis to see trade-by-trade logs.")
-        return
-    if getattr(results, "error", None):
-        st.info("No trade log to show - see the error above.")
-        return
+st.set_page_config(page_title="SMC Scanner & Backtester", layout="wide")
 
-    st.subheader("Trade Log")
 
-    trade_log = results.trade_log
-    if trade_log is None or trade_log.empty:
-        st.warning("No trades were taken for the selected parameters.")
-        return
+def main():
+    st.title("Supply & Demand Scanner")
 
-    outcome_filter = st.multiselect(
-        "Outcome", options=sorted(trade_log["Outcome"].unique()),
-        default=list(trade_log["Outcome"].unique()),
+    config = render_sidebar()
+    run_clicked = st.sidebar.button("Run Analysis", type="primary")
+
+    if run_clicked:
+        if not config["ticker"]:
+            st.sidebar.error("Enter a ticker first.")
+        else:
+            with st.spinner("Fetching data and computing zones..."):
+                try:
+                    results = get_strategy_results(
+                        config["ticker"],
+                        config["start_date"],
+                        config["end_date"],
+                        config["risk_pct"],
+                        config["initial_capital"],
+                        config["data_dir"],
+                        config["ratio"],
+                    )
+                    st.session_state["results"] = results
+                    st.session_state["config"] = config
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
+
+    results = st.session_state.get("results")
+    active_config = st.session_state.get("config", config)
+
+    if results is not None and getattr(results, "error", None):
+        st.error(f"Backend error for {results.ticker}: {results.error}")
+
+    tab_charts, tab_metrics, tab_logs = st.tabs(
+        ["Charts", "Backtest Metrics", "Trade Logs"]
     )
-    zone_filter = st.multiselect(
-        "Zone type", options=sorted(trade_log["Zone_Type"].unique()),
-        default=list(trade_log["Zone_Type"].unique()),
-    )
 
-    filtered = trade_log[
-        trade_log["Outcome"].isin(outcome_filter) & trade_log["Zone_Type"].isin(zone_filter)
-    ]
+    with tab_charts:
+        charts_tab.render(active_config, results)
 
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
-    st.caption(f"{len(filtered)} of {len(trade_log)} trades shown.")
+    with tab_metrics:
+        metrics_tab.render(active_config, results)
+
+    with tab_logs:
+        trade_log_tab.render(active_config, results)
+
+
+if __name__ == "__main__":
+    main()
