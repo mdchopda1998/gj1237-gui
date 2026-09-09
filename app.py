@@ -12,9 +12,15 @@ from ui.tabs import charts_tab, metrics_tab, trade_log_tab
 
 st.set_page_config(page_title="SMC Scanner & Backtester", layout="wide")
 
+# Bump this on every delivered zip. If this string doesn't match what you
+# expect to see under the title, you're running stale files - re-unzip
+# and replace the WHOLE folder rather than copying individual files over.
+APP_BUILD = "2026-09-09-chart-filters-v1"
+
 
 def main():
     st.title("Supply & Demand Scanner")
+    st.caption(f"Build: {APP_BUILD} \u00b7 Streamlit {st.__version__}")
 
     config = render_sidebar()
     run_clicked = st.sidebar.button("Run Analysis", type="primary")
@@ -41,6 +47,12 @@ def main():
 
     results = st.session_state.get("results")
     active_config = st.session_state.get("config", config)
+
+    st.caption(
+        f"Debug: results loaded = {results is not None}"
+        + (f" for {results.ticker}" if results is not None else "")
+        + (f" (error: {results.error})" if results is not None and getattr(results, "error", None) else "")
+    )
 
     if results is not None and getattr(results, "error", None):
         st.error(f"Backend error for {results.ticker}: {results.error}")

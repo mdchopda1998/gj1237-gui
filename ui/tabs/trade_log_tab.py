@@ -1,6 +1,14 @@
 import streamlit as st
 
 
+def _safe_options(series):
+    """Sorted unique values as strings, NaN mapped to 'Unknown' - avoids
+    TypeError: '<' not supported between float (NaN) and str when a
+    column has mixed real values and NaN (seen in real Zone_Type data)."""
+    filled = series.fillna("Unknown").astype(str)
+    return sorted(filled.unique()), filled
+
+
 def render(config: dict, results):
     if results is None:
         st.info("Run an analysis to see trade-by-trade logs.")
@@ -16,17 +24,14 @@ def render(config: dict, results):
         st.warning("No trades were taken for the selected parameters.")
         return
 
-    outcome_filter = st.multiselect(
-        "Outcome", options=sorted(trade_log["Outcome"].unique()),
-        default=list(trade_log["Outcome"].unique()),
-    )
-    zone_filter = st.multiselect(
-        "Zone type", options=sorted(trade_log["Zone_Type"].unique()),
-        default=list(trade_log["Zone_Type"].unique()),
-    )
+    outcome_options, outcome_filled = _safe_options(trade_log["Outcome"])
+    zone_options, zone_filled = _safe_options(trade_log["Zone_Type"])
+
+    outcome_filter = st.multiselect("Outcome", options=outcome_options, default=outcome_options)
+    zone_filter = st.multiselect("Zone type", options=zone_options, default=zone_options)
 
     filtered = trade_log[
-        trade_log["Outcome"].isin(outcome_filter) & trade_log["Zone_Type"].isin(zone_filter)
+        outcome_filled.isin(outcome_filter) & zone_filled.isin(zone_filter)
     ]
 
     st.dataframe(filtered, use_container_width=True, hide_index=True)

@@ -157,3 +157,30 @@ ui/tabs/charts_tab.py                filter widgets + per-timeframe charts (call
 ui/tabs/metrics_tab.py                KPI cards from evaluate_strategy_metrics + composite score
 ui/tabs/trade_log_tab.py              filterable trade-by-trade dataframe
 ```
+
+### Debugging aids added after a real bug hunt
+
+If filters (or anything else) seem to silently not appear, check two things
+first:
+
+1. **The build caption under the title** (`Build: 2026-09-09-chart-filters-v1 · Streamlit X.X.X`).
+   If this doesn't match what you expect, you're running stale files -
+   delete your old extracted folder entirely and re-unzip, rather than
+   copying individual files over it.
+2. **The "Debug: results loaded = ..." caption** just above the tabs -
+   confirms whether `Run Analysis` actually populated results, and shows
+   `results.error` inline if the backend raised.
+
+These two lines are exactly how a real bug got caught while verifying this
+feature: `trade_log_tab.py` was crashing on *every single rerun* (including
+when moving a filter slider) with `TypeError: '<' not supported between
+instances of 'float' and 'str'` - your real `Zone_Type` column had `NaN`
+mixed with strings, and `sorted()` can't compare the two. Since Streamlit
+reruns the entire script - all three tabs' code, not just the visible one -
+on every widget interaction, this exception fired constantly, which is
+consistent with filters appearing to not work at all. Fixed by filling
+`NaN` as `"Unknown"` before building filter options. Caught via
+`streamlit.testing.v1.AppTest`, which runs the real script and inspects
+the resulting element tree without a browser - confirmed zero exceptions
+and all filter widgets present after clicking Run Analysis and moving the
+Min Base Count slider.

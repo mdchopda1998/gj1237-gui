@@ -23,7 +23,13 @@ def render(config: dict, results):
         st.caption(f"Analysis last computed: {results.analysis_timestamp} (zone detection, backtest, scoring)")
 
     # --- Chart Filters: clearly separated from the analysis above ---------
-    with st.container(border=True):
+    st.markdown("---")
+    try:
+        filter_box = st.container(border=True)
+    except TypeError:
+        # Older Streamlit (<1.28) doesn't support container(border=...)
+        filter_box = st.container()
+    with filter_box:
         st.markdown("##### 🔍 Chart Filters — instant, does *not* re-run analysis")
         st.caption(
             "These only change which zones are drawn below. Zone detection, the "
