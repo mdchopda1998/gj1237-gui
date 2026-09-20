@@ -37,11 +37,12 @@ def _mark_custom():
 def _render_ratio_controls(ratio: dict) -> dict:
     st.sidebar.markdown(f"##### {icon_span('tune', size=16)} Zone Detection Ratios", unsafe_allow_html=True)
     st.sidebar.caption(
-        "Ratio's for Average True Range (ATR), TR, Body Size (BS)"
+        "Your real backend currently only reads ratio['GEN.NS'][interval] "
+        "regardless of ticker - these controls edit that shared config."
     )
 
-    preset_options = list(DAILY_PRESETS.keys()) + ["Custom"]
-    preset_kwargs = {} if "ratio_preset_select" in st.session_state else {"index": 0}
+    preset_options = ["Custom"] + list(DAILY_PRESETS.keys())
+    preset_kwargs = {} if "ratio_preset_select" in st.session_state else {"index": 1}
     preset_name = st.sidebar.selectbox(
         "Daily (1d) preset", options=preset_options,
         key="ratio_preset_select", **preset_kwargs,
@@ -61,7 +62,7 @@ def _render_ratio_controls(ratio: dict) -> dict:
     if preset_name != "Custom":
         ratio["GEN.NS"]["1d"] = {k: dict(v) for k, v in DAILY_PRESETS[preset_name].items()}
 
-    with st.sidebar.expander("Advanced Thresholds", expanded=False):
+    with st.sidebar.expander("Advanced: edit TR/ATR & Body/TR thresholds", expanded=False):
         st.caption(
             f"Showing **{preset_name}** values below."
             if preset_name != "Custom" else
@@ -94,7 +95,8 @@ def _render_ratio_controls(ratio: dict) -> dict:
                         key=bs_key, on_change=on_change, **bs_kwargs,
                     )
                     ratio["GEN.NS"].setdefault(tf, {})[candle_type] = {"TR_ATR": tr_atr, "BS_TR": bs_tr}
-    return ratio        
+    return ratio
+
 
 def _render_ticker_picker() -> str:
     """
@@ -107,27 +109,26 @@ def _render_ticker_picker() -> str:
     """
     if hasattr(st, "pills"):
         mode = st.sidebar.pills(
-            "Find stock by", ["Search Stock", "Type ticker"],
-            default="Search Stock", key="ticker_input_mode",
+            "Find stock by", ["Search company name", "Type ticker directly"],
+            default="Search company name", key="ticker_input_mode",
         )
-        mode = mode or "Search Stock"
+        mode = mode or "Search company name"
     else:
         mode = st.sidebar.radio(
-            "Find stock by", ["Search Stock", "Type ticker directly"],
+            "Find stock by", ["Search company name", "Type ticker directly"],
             horizontal=True, key="ticker_input_mode",
         )
 
-    if mode == "Search Stock":
+    if mode == "Search company name":
         universe = search_universe()  # [(ticker, "Company Name (TICKER.NS)"), ...]
         tickers = [t for t, _label in universe]
         label_map = dict(universe)
-        # default_ticker = "RELIANCE.NS" if "RELIANCE.NS" in tickers else tickers[0]
-        default_ticker = "SAIL.NS" if "SAIL.NS" in tickers else tickers[0]
+        default_ticker = "RELIANCE.NS" if "RELIANCE.NS" in tickers else tickers[0]
         default_index = tickers.index(default_ticker)
         selected = st.sidebar.selectbox(
             "Company", options=tickers, index=default_index,
             format_func=lambda t: label_map.get(t, t),
-            help="NIFTY 500 (N50 + NNext50 + Nmidcap150 + Nsmallcap250) - start typing"
+            help="Covers NIFTY 50 + NIFTY Next 50 (~99 companies) - start typing "
                  "a company name to filter. For anything outside that list (e.g. "
                  "SAIL.NS), switch to 'Type ticker directly'.",
         )
@@ -156,11 +157,9 @@ def render_sidebar() -> dict:
         '</div>'
     )
     st.sidebar.markdown(brand_html, unsafe_allow_html=True)
-    st.sidebar.markdown(f"##### {icon_span('settings', size=16)} Control Panel", unsafe_allow_html=True)
+    st.sidebar.markdown(f"##### {icon_span('settings', size=16)} Configuration", unsafe_allow_html=True)
 
     ticker = _render_ticker_picker()
-
-    st.sidebar.divider()
 
     st.sidebar.markdown(f"{icon_span('calendar_month', size=14)} **Date Range**", unsafe_allow_html=True)
     d1, d2 = st.sidebar.columns(2)
@@ -168,8 +167,6 @@ def render_sidebar() -> dict:
         start_date = st.date_input("Start Date", value=date(2021, 1, 1), key="start_date_input")
     with d2:
         end_date = st.date_input("End Date", value=date.today(), key="end_date_input")
-
-    st.sidebar.divider()
 
     risk_pct = st.sidebar.slider(
         "Risk per Trade (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1,
@@ -190,12 +187,9 @@ def render_sidebar() -> dict:
                  "(also used to fetch the ^NSEI Nifty benchmark).",
         )
 
-    st.sidebar.divider()
-
     ratio = _render_ratio_controls(default_ratio())
 
     st.sidebar.divider()
-
     if st.sidebar.button("Reset all filters", icon=":material/restart_alt:", use_container_width=True,
                           help="Clears chart/table filter selections (Base Count, Zone Type, Strength, etc). "
                                "Does not re-run analysis or change these sidebar settings."):
@@ -208,9 +202,12 @@ def render_sidebar() -> dict:
 
     with st.sidebar.expander("About this app", icon=":material/info:", expanded=False):
         st.caption(
-            "A journey from Cosmo to Liberation."
+            "SMC (Smart Money Concepts) demand/supply zone scanner and backtester "
+            "for NSE equities. Zone detection, backtesting, and scoring run your "
+            "real backend logic unchanged - this UI only adds filtering, charting, "
+            "and presentation on top."
         )
-        
+
     return {
         "ticker": ticker.strip().upper() if ticker else "",
         "start_date": start_date,
